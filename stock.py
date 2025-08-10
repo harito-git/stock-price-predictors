@@ -2,6 +2,10 @@ import requests
 import time
 from model import StockModel
 from dotenv import load_dotenv
+import yfinance as yf
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.arima.model import ARIMA
 
 import os
 load_dotenv()
@@ -12,12 +16,32 @@ class Stock:
     def __init__(self, symbol):
         self.symbol = symbol.upper()
         self.price = None
+        self.prices = []
+        self.model = StockModel()
         self.history = []
         self.last_updated = 0
         self.prediction = None
 
     def fetch_data(self):
         # Cache for 60 seconds
+        ticker = yf.Ticker(self.symbol)
+        hist = ticker.history(period="1mo")  # or whatever you prefer
+        self.price = ticker.info.get('regularMarketPrice')
+        self.prices = hist['Close'].tolist()
+        print(self.prices)
+        if not self.prices:
+            raise Exception(f"No price data available for symbol {self.symbol}")
+        self.history = [{"date": str(date.date()), "price": row["Close"]} for date, row in hist.iterrows()]
+        model = ARIMA(self.prices, order=(1, 0, 1))
+        model_fit = model.fit()
+
+        # Forecast future prices (not differences)
+        forecast_steps = 5  # predict future stock prices for 5 future days, steps is number of days
+        forecast = model_fit.forecast(steps=forecast_steps)
+        self.prediction = forecast.tolist()
+        self.last_updated = time.time()
+        
+        """
         if time.time() - self.last_updated < 60:
             return
 
@@ -39,6 +63,7 @@ class Stock:
         ]
         self.price = self.history[-1]["price"]
         self.last_updated = time.time()
+        """
 
 class StockTracker:
     def __init__(self):
