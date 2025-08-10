@@ -1,0 +1,17 @@
+flask
+flask-cors
+requests
+torch
+openai
+transformers
+scikit-learn
+numpy
+pandas
+torch
+torch.nn
+torch.optim
+dotenv
+python-dotenv
+requests
+openai
+

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OOP Stock Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* extra styling */
+    body.dark {
+      background-color: #121212;
+      color: #eee;
+    }
+    .stock-card {
+      transition: background-color 0.3s ease;
+    }
+    body.dark .stock-card {
+      background-color: #222;
+      border-color: #444;
+    }
+  </style>
+</head>
+<body class="bg-white text-gray-900 min-h-screen flex flex-col">
+
+  <header class="flex items-center justify-between p-4 shadow-md bg-gray-100 dark:bg-gray-900">
+    <h1 class="text-2xl font-bold">OOP Stock Tracker</h1>
+
+    <div class="flex gap-2 items-center">
+      <input
+        id="stock-input"
+        type="text"
+        placeholder="Ticker e.g. AAPL"
+        class="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-100"
+      />
+      <!-- Add Stock Button -->
+      <button
+        id="add-stock-btn"
+        class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+      >Add</button>
+      <!-- Toggle Dark Mode Light Mode Button -->
+      <button
+        id="toggle-dark-mode"
+        class="px-3 py-2 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+      >Toggle Dark</button>
+    </div>
+  </header>
+  <!-- Main content container area for stock cards.-->
+  <main id="watchlist-container" class="p-4 flex-grow max-w-4xl mx-auto space-y-4">
+    <!-- Stock cards will be injected here -->
+  </main>
+<!--Footer section is being intiailized over here.-->
+  <footer class="text-center p-4 text-sm text-gray-500 dark:text-gray-400">
+    Built with Flask, PyTorch, & OpenAI | by HT
+  </footer>
+
+  <script>
+    // UTILITIES function to fetch JSON with error handling
+    function fetchJSON(url, options = {}) {
+      return fetch(url, options).then(res => {
+        // Check if the response is ok, if not throw an error with the status code.
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+        // Parse the response as JSON and return it.
+        return res.json();
+      });
+    }
+
+    // STOCK CLASS to represent each stock in the watchlist and it's attributes and features.
+    class Stock {
+      constructor(symbol) {
+        // Initializing stock with symbol, price, history, insight, prediction, and chart.
+        this.symbol = symbol.toUpperCase();
+        this.price = null;
+        this.history = [];
+        this.insight = "";
+        this.prediction = "";
+        this.chart = null;
+        this.chartCtx = null;
+      }
+      // Fetch stock data from the backend API, including price, history and past data.
+      async fetchData() {
+        const data = await fetchJSON(`http://127.0.0.1:5000/stock/${this.symbol}`);
+        this.price = data.price;
+        this.history = data.history;
+      }
+
+     
+
+     /* async fetchPrediction() {
+       // try {
+          const data = await fetchJSON(`http://localhost:5000/stock/${this.symbol}/prediction`);
+          this.prediction = data.prediction.toFixed(2);
+        } catch {
+          this.prediction = "N/A";
+        }
+      }
+        */
+      // Fetch AI insight and display the informtion in the container in HTML from the backend API, using a try-catch block for error handling.
+      render(container) {
+        let card = document.getElementById(`stock-${this.symbol}`);
+        if (!card) {
+          card = document.createElement("section");
+          card.id = `stock-${this.symbol}`;
+          card.className = "stock-card p-4 border rounded shadow bg-gray-50 dark:bg-gray-800 dark:border-gray-700";
+          container.appendChild(card);
+        }
+        // Set the styling of the stock card and add all the relevant stock data to it. 
+        card.innerHTML = `
+          <header class="flex justify-between items-center mb-3">
+            <h2 class="text-xl font-semibold">${this.symbol}</h2>
+            <button
+              id="remove-${this.symbol}"
+              class="text-red-500 hover:text-red-700 transition font-semibold"
+              title="Remove stock"
+            >&times;</button>
+          </header>
+          <!-- Display current price to two decimal places, model prediction, and AI insight -->
+          <p class="mb-1">Current Price: <strong>$${this.price.toFixed(2)}</strong></p>
+          <p class="mb-1">Model Prediction (next price): <strong>${this.prediction}</strong></p>
+          <p class="mb-3 italic text-sm text-gray-600 dark:text-gray-400">AI Insight: ${this.insight}</p>
+
+          <canvas id="chart-${this.symbol}" class="w-full h-48"></canvas>
+        `;
+        // Add event listener to the remove button to remove stock from watchlist and update local storage and design the cross, x button.
+        card.querySelector(`#remove-${this.symbol}`).onclick = () => {
+          app.watchlist.removeStock(this.symbol);
+          card.remove();
+          app.save();
+        };
+        // Initialize Chart.js chart for stock price history
+        if (!this.chartCtx) {
+          this.chartCtx = card.querySelector(`#chart-${this.symbol}`).getContext("2d");
+        }
+        this.renderChart();
+      }
+      // Render the stock price history chart to display it using Chart.js, destroy previous chart instance if it exists to avoid memory leaks.
+      renderChart() {
+        if (this.chart) this.chart.destroy();
+
+        const labels = this.history.map(h => {
+          const d = new Date(h.time);
+          return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        });
+        const prices = this.history.map(h => h.price);
+        // Create a new line chart with the stock price history data and create it with a new instance as well.
+        this.chart = new Chart(this.chartCtx, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: `${this.symbol} Price`,
+              data: prices,
+              borderColor: 'rgb(37, 99, 235)',
+              backgroundColor: 'rgba(37, 99, 235, 0.2)',
+              fill: true,
+              tension: 0.2,
+              pointRadius: 0
+            }]
+          },
+          // Configure chart options and data it has to display. 
+          options: {
+            animation: false,
+            scales: {
+              x: { display: true },
+              y: { beginAtZero: false }
+            },
+            plugins: {
+              legend: { display: false }
+            }
+          }
+        });
+      }
+    }
+
+    // Create a watchlist class to manage multiple stocks, using a Map object to store stocks by their symbol. 
+    class Watchlist {
+      constructor() {
+        // Initialize the watchlist with an empty Map to store stocks and create a deep copy of it.
+        this.stocks = new Map();
+        this.load();
+      }
+      // Initialize method to add the stock to the watchlist if not already there.
+      addStock(symbol) {
+        if (!this.stocks.has(symbol)) {
+          const stock = new Stock(symbol);
+          this.stocks.set(symbol, stock);
+        }
+      }
+      // Initialize a method to remove a stock from the watchlist.
+      removeStock(symbol) {
+        this.stocks.delete(symbol);
+      }
+      // Method to load and save the watchlist of the stock from the current storage in the browser with JSON data and parsing it.
+      load() {
+        const saved = localStorage.getItem('watchlist');
+        if (saved) {
+          JSON.parse(saved).forEach(sym => this.addStock(sym));
+        }
+      }
+      //Method to save the current watchlist in the storage of the browser and use json stringify for it. 
+      save() {
+        localStorage.setItem('watchlist', JSON.stringify([...this.stocks.keys()]));
+      }
+    }
+
+    //Main App class, calls constructor to initialize the watchlist and set up event listeners for adding stocks, toggling dark mode, and refreshing stock data.
+    class App {
+      constructor() {
+        this.watchlist = new Watchlist();
+        this.container = document.getElementById('watchlist-container');
+        this.init();
+      }
+
+      init() {
+        // Load existing stocks from watchlist and get their specific html data from the webpage and add the stock to the watchlsit using the addstock method, check if the stock symbol is valid using a conditional.
+        document.getElementById('add-stock-btn').onclick = async () => {
+          const input = document.getElementById('stock-input');
+          const symbol = input.value.trim().toUpperCase();
+          if (!symbol) return;
+          this.watchlist.addStock(symbol);
+          input.value = '';
+          await this.refreshStock(symbol);
+          this.watchlist.save();
+        };
+
+        document.getElementById('toggle-dark-mode').onclick = () => {
+          document.body.classList.toggle('dark');
+          localStorage.setItem('darkMode', document.body.classList.contains('dark'));
+        };
+
+        if (localStorage.getItem('darkMode') === 'true') {
+          document.body.classList.add('dark');
+        }
+
+        this.refreshAll();
+      }
+
+      async refreshStock(symbol) {
+        const stock = this.watchlist.stocks.get(symbol);
+        if (!stock) return;
+        //clear previous chart if it exists of stock data and render new, using try-catch for error handling for new data. 
+        try {
+          await stock.fetchData();
+          stock.render(this.container);
+        } catch (err) {
+          alert(`Failed to load data for ${symbol}: ${err.message}`);
+          this.watchlist.removeStock(symbol);
+          this.watchlist.save();
+        }
+      }
+      // Refresh the stock data in the watchlsit for all stocks that are currently being tracked in key value, dictonary mapping ways.
+      async refreshAll() {
+        for (const symbol of this.watchlist.stocks.keys()) {
+          await this.refreshStock(symbol);
+        }
+      }
+    }
+    // Intialize the new App instance, and create a deep copy of it to restart the application. 
+    const app = new App();
+  </script>
+</body>
+</html>
